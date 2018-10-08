@@ -50,11 +50,14 @@ public class GitConverter {
   private final Path tempPath;
   @NotNull
   private final HTreeMap<String, MetaData> cacheMeta;
+  @NotNull
+  public final HashMap<String, String> commitMap;
 
   public GitConverter(@NotNull DB cache, @NotNull Path basePath, @NotNull String[] globs) throws IOException, InvalidPatternException {
     this.basePath = basePath;
     this.cache = cache;
     this.globs = globs.clone();
+    this.commitMap = new HashMap<>();
     this.matchers = convertGlobs(globs);
     Arrays.sort(globs);
 
@@ -171,7 +174,11 @@ public class GitConverter {
         }
         // Set tree
         builder.setTreeId(resolver.resolve(TaskType.Simple, "", revObject.getTree()));
-        return inserter.insert(builder);
+
+        ObjectId objectId = inserter.insert(builder);
+        commitMap.put(revObject.getId().getName(), objectId.getName());
+
+        return objectId;
       }
     };
   }

@@ -25,7 +25,9 @@ import ru.bozaro.gitlfs.client.exceptions.RequestException;
 import ru.bozaro.gitlfs.common.data.*;
 import ru.bozaro.gitlfs.common.data.Error;
 
+import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.ObjectOutputStream;
 import java.net.URI;
 import java.nio.file.*;
 import java.nio.file.attribute.BasicFileAttributes;
@@ -81,7 +83,7 @@ public class Main {
       ).toArray(String[]::new);
     }
     try {
-      processRepository(cmd.src, cmd.dst, cmd.cache, client, cmd.writeThreads, cmd.uploadThreads, globs);
+      processRepository(cmd.src, cmd.dst, cmd.cache, client, cmd.writeThreads, cmd.uploadThreads, cmd.map, globs);
     } catch (ExecutionException e) {
       if (e.getCause() instanceof RequestException) {
         final RequestException cause = (RequestException) e.getCause();
@@ -143,7 +145,7 @@ public class Main {
     return false;
   }
 
-  public static void processRepository(@NotNull Path srcPath, @NotNull Path dstPath, @NotNull Path cachePath, @Nullable Client client, int writeThreads, int uploadThreads, @NotNull String... globs) throws IOException, InterruptedException, ExecutionException, InvalidPatternException {
+  public static void processRepository(@NotNull Path srcPath, @NotNull Path dstPath, @NotNull Path cachePath, @Nullable Client client, int writeThreads, int uploadThreads, @Nullable Path mapPath, @NotNull String... globs) throws IOException, InterruptedException, ExecutionException, InvalidPatternException {
     removeDirectory(dstPath);
     Files.createDirectories(dstPath);
 
@@ -178,6 +180,14 @@ public class Main {
         refUpdate.update();
         log.info("  convert ref: {} -> {} ({})", oldId.getName(), newId.getName(), ref.getKey());
       }
+
+      if (mapPath != null) {
+        FileOutputStream fos = new FileOutputStream(mapPath.toString());
+        ObjectOutputStream oos = new ObjectOutputStream(fos);
+        oos.writeObject(converter.commitMap);
+        oos.close();
+      }
+
     } finally {
       dstRepo.close();
       srcRepo.close();
@@ -440,6 +450,9 @@ public class Main {
     private boolean noCheckCertificate = false;
     @Parameter(names = {"--glob-file"}, description = "File containing glob patterns")
     private Path globFile = null;
+    @Parameter(names = {"-m", "--map"}, description = "Old-to-new hash map file", required = false)
+    @NotNull
+    private Path map;
 
     @Parameter(description = "LFS file glob patterns")
     @NotNull
