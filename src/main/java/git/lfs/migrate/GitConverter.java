@@ -51,13 +51,16 @@ public class GitConverter {
   @NotNull
   private final HTreeMap<String, MetaData> cacheMeta;
   @NotNull
-  public final HashMap<String, String> commitMap;
+  public final HashMap<ObjectId, ObjectId> commitMap;
+  @NotNull
+  public final HashMap<String, HashMap<ObjectId, ObjectId>> submoduleMaps;
 
-  public GitConverter(@NotNull DB cache, @NotNull Path basePath, @NotNull String[] globs) throws IOException, InvalidPatternException {
+  public GitConverter(@NotNull DB cache, @NotNull Path basePath, @NotNull HashMap<String, HashMap<ObjectId, ObjectId>> submoduleMaps, @NotNull String[] globs) throws IOException, InvalidPatternException {
     this.basePath = basePath;
     this.cache = cache;
     this.globs = globs.clone();
     this.commitMap = new HashMap<>();
+    this.submoduleMaps = submoduleMaps;
     this.matchers = convertGlobs(globs);
     Arrays.sort(globs);
 
@@ -176,7 +179,7 @@ public class GitConverter {
         builder.setTreeId(resolver.resolve(TaskType.Simple, "", revObject.getTree()));
 
         ObjectId objectId = inserter.insert(builder);
-        commitMap.put(revObject.getId().getName(), objectId.getName());
+        commitMap.put(revObject.getId(), objectId);
 
         return objectId;
       }
@@ -232,8 +235,16 @@ public class GitConverter {
         // Create new tree.
         Collections.sort(entries);
         final TreeFormatter treeBuilder = new TreeFormatter();
+        ObjectId objectId;
         for (GitTreeEntry entry : entries) {
-          treeBuilder.append(entry.getFileName(), entry.getFileMode(), resolver.resolve(entry.getTaskKey()));
+          objectId = resolver.resolve(entry.getTaskKey());
+          if ((entry.getFileMode().getBits() & FileMode.TYPE_MASK) == FileMode.TYPE_GITLINK
+          && submoduleMaps.containsKey(entry.getFileName())) {
+            //log.info("found gitlink at " + entry.getFileName() + ". replacing " + objectId);
+            objectId = submoduleMaps.get(entry.getFileName()).getOrDefault(objectId, objectId);
+            //log.info("new hash is " + objectId);
+          }
+          treeBuilder.append(entry.getFileName(), entry.getFileMode(), objectId);
         }
         new ObjectChecker().checkTree(treeBuilder.toByteArray());
         return inserter.insert(treeBuilder);

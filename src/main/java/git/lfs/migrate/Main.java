@@ -9,6 +9,7 @@ import org.apache.http.ssl.SSLContexts;
 import org.eclipse.jgit.errors.InvalidPatternException;
 import org.eclipse.jgit.lib.*;
 import org.eclipse.jgit.storage.file.FileRepositoryBuilder;
+import org.eclipse.jgit.util.FileUtils;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.mapdb.DB;
@@ -25,9 +26,7 @@ import ru.bozaro.gitlfs.client.exceptions.RequestException;
 import ru.bozaro.gitlfs.common.data.*;
 import ru.bozaro.gitlfs.common.data.Error;
 
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.io.ObjectOutputStream;
+import java.io.*;
 import java.net.URI;
 import java.nio.file.*;
 import java.nio.file.attribute.BasicFileAttributes;
@@ -83,7 +82,7 @@ public class Main {
       ).toArray(String[]::new);
     }
     try {
-      processRepository(cmd.src, cmd.dst, cmd.cache, client, cmd.writeThreads, cmd.uploadThreads, cmd.map, globs);
+      processRepository(cmd.src, cmd.dst, cmd.cache, client, cmd.writeThreads, cmd.uploadThreads, cmd.map, cmd.submoduleMapNames, globs);
     } catch (ExecutionException e) {
       if (e.getCause() instanceof RequestException) {
         final RequestException cause = (RequestException) e.getCause();
@@ -145,7 +144,7 @@ public class Main {
     return false;
   }
 
-  public static void processRepository(@NotNull Path srcPath, @NotNull Path dstPath, @NotNull Path cachePath, @Nullable Client client, int writeThreads, int uploadThreads, @Nullable Path mapPath, @NotNull String... globs) throws IOException, InterruptedException, ExecutionException, InvalidPatternException {
+  public static void processRepository(@NotNull Path srcPath, @NotNull Path dstPath, @NotNull Path cachePath, @Nullable Client client, int writeThreads, int uploadThreads, @Nullable Path mapPath, @Nullable String submoduleMapNames, @NotNull String... globs) throws IOException, InterruptedException, ExecutionException, InvalidPatternException, ClassNotFoundException {
     removeDirectory(dstPath);
     Files.createDirectories(dstPath);
 
@@ -160,7 +159,20 @@ public class Main {
         .fileMmapEnableIfSupported()
         .checksumHeaderBypass()
         .make()) {
-      final GitConverter converter = new GitConverter(cache, dstPath, globs);
+
+      HashMap<String, HashMap<ObjectId, ObjectId>> submoduleMaps = new HashMap<>();
+      if (submoduleMapNames != null) {
+        String[] names = submoduleMapNames.split(",");
+        for (String submoduleName : names) {
+          FileInputStream fis = new FileInputStream(submoduleName);
+          ObjectInputStream ois = new ObjectInputStream(fis);
+          submoduleMaps.put(submoduleName, (HashMap<ObjectId, ObjectId>)ois.readObject());
+          ois.close();
+          fis.close();
+        }
+      }
+
+      final GitConverter converter = new GitConverter(cache, dstPath, submoduleMaps, globs);
       dstRepo.create(true);
       // Load all revision list.
       ConcurrentMap<TaskKey, ObjectId> converted = new ConcurrentHashMap<>();
@@ -186,6 +198,7 @@ public class Main {
         ObjectOutputStream oos = new ObjectOutputStream(fos);
         oos.writeObject(converter.commitMap);
         oos.close();
+        fos.close();
       }
 
     } finally {
@@ -451,8 +464,9 @@ public class Main {
     @Parameter(names = {"--glob-file"}, description = "File containing glob patterns")
     private Path globFile = null;
     @Parameter(names = {"-m", "--map"}, description = "Old-to-new hash map file", required = false)
-    @NotNull
-    private Path map;
+    private Path map = null;
+    @Parameter(names = {"-z", "--submodule-maps"}, description = "Filenames of submodule hash maps separated by ,", required = false)
+    private String submoduleMapNames = null;
 
     @Parameter(description = "LFS file glob patterns")
     @NotNull
