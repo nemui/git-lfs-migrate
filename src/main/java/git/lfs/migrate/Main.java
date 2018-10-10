@@ -81,8 +81,24 @@ public class Main {
               .filter(s -> !s.isEmpty())
       ).toArray(String[]::new);
     }
+    String[] submoduleUrlOld = new String[0];
+    String[] submoduleUrlNew = new String[0];
+    if (cmd.submoduleUrls != null) {
+      String[] urls = Files.lines(cmd.submoduleUrls)
+              .map(String::trim)
+              .filter(s -> !s.isEmpty()).toArray(String[]::new);
+      int len = urls.length;
+      submoduleUrlOld = new String[len];
+      submoduleUrlNew = new String[len];
+      for (int i = 0; i < len; i++) {
+        String[] parts = urls[i].split(" ");
+        submoduleUrlOld[i] = parts[0];
+        submoduleUrlNew[i] = parts[1];
+      }
+    }
     try {
-      processRepository(cmd.src, cmd.dst, cmd.cache, client, cmd.writeThreads, cmd.uploadThreads, cmd.map, cmd.submoduleMapNames, globs);
+      processRepository(cmd.src, cmd.dst, cmd.cache, client, cmd.writeThreads, cmd.uploadThreads, cmd.map,
+              cmd.submoduleMapNames, submoduleUrlOld, submoduleUrlNew, globs);
     } catch (ExecutionException e) {
       if (e.getCause() instanceof RequestException) {
         final RequestException cause = (RequestException) e.getCause();
@@ -144,7 +160,12 @@ public class Main {
     return false;
   }
 
-  public static void processRepository(@NotNull Path srcPath, @NotNull Path dstPath, @NotNull Path cachePath, @Nullable Client client, int writeThreads, int uploadThreads, @Nullable Path mapPath, @Nullable String submoduleMapNames, @NotNull String... globs) throws IOException, InterruptedException, ExecutionException, InvalidPatternException, ClassNotFoundException {
+  public static void processRepository(@NotNull Path srcPath, @NotNull Path dstPath, @NotNull Path cachePath,
+                                       @Nullable Client client, int writeThreads, int uploadThreads,
+                                       @Nullable Path mapPath, @Nullable String submoduleMapNames,
+                                       @NotNull String[] submoduleUrlOld, @NotNull String[] submoduleUrlNew,
+                                       @NotNull String... globs) throws IOException, InterruptedException,
+          ExecutionException, InvalidPatternException, ClassNotFoundException {
     removeDirectory(dstPath);
     Files.createDirectories(dstPath);
 
@@ -172,7 +193,7 @@ public class Main {
         }
       }
 
-      final GitConverter converter = new GitConverter(cache, dstPath, submoduleMaps, globs);
+      final GitConverter converter = new GitConverter(cache, dstPath, submoduleMaps, submoduleUrlOld, submoduleUrlNew, globs);
       dstRepo.create(true);
       // Load all revision list.
       ConcurrentMap<TaskKey, ObjectId> converted = new ConcurrentHashMap<>();
@@ -467,6 +488,8 @@ public class Main {
     private Path map = null;
     @Parameter(names = {"-z", "--submodule-maps"}, description = "Filenames of submodule hash maps separated by ,", required = false)
     private String submoduleMapNames = null;
+    @Parameter(names = {"-y", "--submodule-urls"}, description = "Text file with one submodule url mapping per line", required = false)
+    private Path submoduleUrls = null;
 
     @Parameter(description = "LFS file glob patterns")
     @NotNull

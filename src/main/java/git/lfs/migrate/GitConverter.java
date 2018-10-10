@@ -39,6 +39,13 @@ public class GitConverter {
   @NotNull
   private static final String GIT_ATTRIBUTES = ".gitattributes";
   @NotNull
+  private static final String GIT_MODULES = ".gitmodules";
+  @NotNull
+  private final String[] submoduleUrlOld;
+  @NotNull
+  private final String[] submoduleUrlNew;
+  private final boolean replaceModules;
+  @NotNull
   private final String[] globs;
   @NotNull
   private final PathMatcher[] matchers;
@@ -55,12 +62,21 @@ public class GitConverter {
   @NotNull
   public final HashMap<String, HashMap<ObjectId, ObjectId>> submoduleMaps;
 
-  public GitConverter(@NotNull DB cache, @NotNull Path basePath, @NotNull HashMap<String, HashMap<ObjectId, ObjectId>> submoduleMaps, @NotNull String[] globs) throws IOException, InvalidPatternException {
-    this.basePath = basePath;
+  public GitConverter(@NotNull DB cache, @NotNull Path basePath,
+                      @NotNull HashMap<String, HashMap<ObjectId, ObjectId>> submoduleMaps,
+                      @NotNull String[] submoduleUrlOld, @NotNull String[] submoduleUrlNew,
+                      @NotNull String[] globs) throws IOException, InvalidPatternException {
     this.cache = cache;
-    this.globs = globs.clone();
-    this.commitMap = new HashMap<>();
+    this.basePath = basePath;
     this.submoduleMaps = submoduleMaps;
+    this.submoduleUrlOld = submoduleUrlOld.clone();
+    this.submoduleUrlNew = submoduleUrlNew.clone();
+    this.globs = globs.clone();
+
+    replaceModules = submoduleUrlOld.length > 0;
+
+    this.commitMap = new HashMap<>();
+
     this.matchers = convertGlobs(globs);
     Arrays.sort(globs);
 
@@ -101,6 +117,8 @@ public class GitConverter {
       }
       case Attribute:
         return createAttributesTask(reader, key.getObjectId());
+      case Modules:
+        return replaceModulesTask(reader, key.getObjectId());
       case UploadLfs:
         return convertLfsTask(reader, key.getObjectId());
       default:
@@ -202,6 +220,10 @@ public class GitConverter {
             blobTask = TaskType.Attribute;
             pathTask = null;
             needAttributes = false;
+          } else if (replaceModules && treeParser.getEntryPathString().equals(GIT_MODULES)) {
+            blobTask = TaskType.Modules;
+            pathTask = null;
+            //log.info("detected Modules task");
           } else if (isFile(fileMode) && matchFilename(path + "/" + treeParser.getEntryPathString())) {
             blobTask = TaskType.UploadLfs;
             pathTask = null;
@@ -433,6 +455,38 @@ public class GitConverter {
     };
   }
 
+  @NotNull
+  private ConvertTask replaceModulesTask(@NotNull final ObjectReader reader, @Nullable ObjectId id) throws IOException {
+    return new ConvertTask() {
+      @NotNull
+      @Override
+      public Iterable<TaskKey> depends() throws IOException {
+        return Collections.emptyList();
+      }
+
+      @NotNull
+      @Override
+      public ObjectId convert(@NotNull Repository dstRepo, @NotNull ObjectInserter inserter, @NotNull ConvertResolver resolver, @Nullable Uploader uploader) throws IOException {
+        final ByteArrayOutputStream blob = new ByteArrayOutputStream();
+        //log.info("converting modules");
+        try (BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(openAttributes(reader, id), StandardCharsets.UTF_8))) {
+          while (true) {
+            String line = bufferedReader.readLine();
+            if (line == null) break;
+
+            for (int i = 0, len = submoduleUrlOld.length; i < len; i++) {
+              line = line.replace(submoduleUrlOld[i], submoduleUrlNew[i]);
+            }
+
+            blob.write(line.getBytes(StandardCharsets.UTF_8));
+            blob.write('\n');
+          }
+        }
+        return inserter.insert(Constants.OBJ_BLOB, blob.toByteArray());
+      }
+    };
+  }
+
   private ConvertTask copyTask(@NotNull ObjectReader reader, @NotNull ObjectId id) throws IOException {
     return new ConvertTask() {
       @NotNull
@@ -462,6 +516,7 @@ public class GitConverter {
     EndMark(false),
     Simple(true),
     Attribute(false),
+    Modules(false),
     UploadLfs(false);
 
     TaskType(boolean needPath) {
