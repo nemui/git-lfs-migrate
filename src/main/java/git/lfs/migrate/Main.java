@@ -9,7 +9,6 @@ import org.apache.http.ssl.SSLContexts;
 import org.eclipse.jgit.errors.InvalidPatternException;
 import org.eclipse.jgit.lib.*;
 import org.eclipse.jgit.storage.file.FileRepositoryBuilder;
-import org.eclipse.jgit.util.FileUtils;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.mapdb.DB;
@@ -181,13 +180,13 @@ public class Main {
         .checksumHeaderBypass()
         .make()) {
 
-      HashMap<String, HashMap<ObjectId, ObjectId>> submoduleMaps = new HashMap<>();
+      HashMap<String, HashMap<String, String>> submoduleMaps = new HashMap<>();
       if (submoduleMapNames != null) {
         String[] names = submoduleMapNames.split(",");
         for (String submoduleName : names) {
           FileInputStream fis = new FileInputStream(submoduleName);
           ObjectInputStream ois = new ObjectInputStream(fis);
-          submoduleMaps.put(submoduleName, (HashMap<ObjectId, ObjectId>)ois.readObject());
+          submoduleMaps.put(submoduleName, (HashMap<String, String>)ois.readObject());
           ois.close();
           fis.close();
         }

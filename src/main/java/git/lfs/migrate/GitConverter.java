@@ -58,12 +58,12 @@ public class GitConverter {
   @NotNull
   private final HTreeMap<String, MetaData> cacheMeta;
   @NotNull
-  public final HashMap<ObjectId, ObjectId> commitMap;
+  public final HashMap<String, String> commitMap;
   @NotNull
-  public final HashMap<String, HashMap<ObjectId, ObjectId>> submoduleMaps;
+  public final HashMap<String, HashMap<String, String>> submoduleMaps;
 
   public GitConverter(@NotNull DB cache, @NotNull Path basePath,
-                      @NotNull HashMap<String, HashMap<ObjectId, ObjectId>> submoduleMaps,
+                      @NotNull HashMap<String, HashMap<String, String>> submoduleMaps,
                       @NotNull String[] submoduleUrlOld, @NotNull String[] submoduleUrlNew,
                       @NotNull String[] globs) throws IOException, InvalidPatternException {
     this.cache = cache;
@@ -197,7 +197,7 @@ public class GitConverter {
         builder.setTreeId(resolver.resolve(TaskType.Simple, "", revObject.getTree()));
 
         ObjectId objectId = inserter.insert(builder);
-        commitMap.put(revObject.getId(), objectId);
+        commitMap.put(revObject.getId().name(), objectId.name());
 
         return objectId;
       }
@@ -262,9 +262,9 @@ public class GitConverter {
           objectId = resolver.resolve(entry.getTaskKey());
           if ((entry.getFileMode().getBits() & FileMode.TYPE_MASK) == FileMode.TYPE_GITLINK
           && submoduleMaps.containsKey(entry.getFileName())) {
-            //log.info("found gitlink at " + entry.getFileName() + ". replacing " + objectId);
-            objectId = submoduleMaps.get(entry.getFileName()).getOrDefault(objectId, objectId);
-            //log.info("new hash is " + objectId);
+            //log.info("found gitlink at " + entry.getFileName() + ". replacing " + objectId.name());
+            objectId = ObjectId.fromString(submoduleMaps.get(entry.getFileName()).getOrDefault(objectId.name(), objectId.name()));
+            //log.info("new hash is " + objectId.name());
           }
           treeBuilder.append(entry.getFileName(), entry.getFileMode(), objectId);
         }
